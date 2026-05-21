@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+~$*.xlsx
+*.xlsx
+test_result.json
+.env
+.venv/

@@ -16,7 +16,7 @@ echo ""
 # 安装依赖
 echo "[1/2] 安装 Python 依赖..."
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-pip3 install -r "$SCRIPT_DIR/requirements.txt" -q
+python3 -m pip install -r "$SCRIPT_DIR/requirements.txt" -q
 echo "      依赖安装完成"
 echo ""
 

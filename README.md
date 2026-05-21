@@ -10,7 +10,7 @@
 
 ```bash
 git clone https://github.com/waitamomentC/top10toolagent.git
-cd top10toolagent/agent
+cd top10toolagent
 ```
 
 ### 2. 一键安装
@@ -222,7 +222,7 @@ registry.register(MyTool())
 ## 项目结构
 
 ```
-agent/
+top10toolagent/
 ├── cli.py                    # 终端 CLI 入口 (top10tool 命令)
 ├── main.py                   # 入口层: FastAPI + 依赖注入
 ├── requirements.txt

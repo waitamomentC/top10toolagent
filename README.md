@@ -43,7 +43,20 @@ top10tool
 |------|------|
 | `当日XXX热搜` | 爬取指定平台热搜（如 `当日抖音热搜`） |
 | `/config` | 查看当前 LLM 配置 |
+| `/uninstall` | 显示卸载方法 |
 | `/exit` `/quit` `/q` | 退出 |
+
+### 卸载
+
+```bash
+# Windows
+uninstall.bat
+
+# Linux / Mac
+chmod +x uninstall.sh && ./uninstall.sh
+```
+
+卸载脚本会清除：全局命令、PATH 记录、LLM 配置文件。
 
 ---
 

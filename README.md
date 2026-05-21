@@ -1,6 +1,51 @@
-# ReAct Agent
+# top10tool — 热搜 TOP10 智能工具
 
-基于 **ReAct（Reasoning + Acting）范式** 的轻量级智能 Agent，四层架构清晰分层，FastAPI 启动。
+基于 **ReAct（Reasoning + Acting）范式** 的轻量级智能 Agent。支持终端交互式 CLI 和 FastAPI 两种使用方式。
+
+## 终端 CLI 安装（推荐）
+
+在终端输入 `top10tool` 即可唤醒 Agent，无需配置环境变量，首次运行自动引导配置 LLM。
+
+### 1. 拉取项目
+
+```bash
+git clone https://github.com/waitamomentC/top10toolagent.git
+cd top10toolagent/agent
+```
+
+### 2. 一键安装
+
+**Windows:**
+```bat
+setup.bat
+```
+
+**Linux / Mac:**
+```bash
+chmod +x setup.sh && ./setup.sh
+```
+
+安装脚本会自动完成：检测 Python → 安装依赖 → 创建全局 `top10tool` 命令。
+
+### 3. 启动
+
+重新打开终端，输入：
+
+```bash
+top10tool
+```
+
+首次运行会引导你配置 LLM 连接信息（API 地址、Key、模型名称），配置保存在 `~/.top10tool/config.json`。
+
+### CLI 命令
+
+| 命令 | 说明 |
+|------|------|
+| `当日XXX热搜` | 爬取指定平台热搜（如 `当日抖音热搜`） |
+| `/config` | 查看当前 LLM 配置 |
+| `/exit` `/quit` `/q` | 退出 |
+
+---
 
 ## 架构
 
@@ -19,7 +64,11 @@
 | **路由层** | `router/react_router.py` | ReAct 循环引擎：解析 Thought/Action、调度工具、拼装 Observation |
 | **工具层** | `tools/` | 工具基类 + 内置工具 + 注册表，可插拔扩展 |
 
-## 快速开始
+---
+
+## FastAPI 服务模式
+
+如需要通过 HTTP API 调用 Agent：
 
 ### 1. 安装依赖
 
@@ -27,7 +76,7 @@
 pip install -r requirements.txt
 ```
 
-### 2. 配置环境变量
+### 2. 配置环境变量（仅 FastAPI 模式需要）
 
 ```bash
 # LLM 配置 —— 支持 OpenAI / 阿里百炼 / DeepSeek 等兼容接口
@@ -135,6 +184,9 @@ curl -X POST http://localhost:8000/agent/run \
 | WebSearchTool | `search` | 模拟搜索（生产环境替换为 SerpAPI / Tavily 等） |
 | ReadExcelTool | `read_excel` | 读取本地 Excel 文件（仅 .xlsx / .xls） |
 | WriteExcelTool | `write_excel` | 写入本地 Excel 文件（仅 .xlsx） |
+| WebScraperTool | `web_scraper` | 抓取单个网页，提取标题/时间/正文/链接 |
+| WebCrawlerTool | `web_crawler` | 全网关键词爬虫，BFS 递归爬取匹配页面 |
+| ListExcelFilesTool | `list_excel_files` | 列出项目根目录下所有 Excel 文件 |
 
 ## 添加自定义工具
 
@@ -158,19 +210,26 @@ registry.register(MyTool())
 
 ```
 agent/
-├── main.py                  # 入口层: FastAPI + 依赖注入
+├── cli.py                    # 终端 CLI 入口 (top10tool 命令)
+├── main.py                   # 入口层: FastAPI + 依赖注入
 ├── requirements.txt
+├── setup.bat                 # Windows 一键安装脚本
+├── setup.sh                  # Linux/Mac 一键安装脚本
 ├── core/
-│   └── llm.py               # LLM 抽象 + OpenAI 兼容客户端
+│   └── llm.py                # LLM 抽象 + OpenAI 兼容客户端
 ├── gateway/
-│   └── handler.py           # 网关层: 请求处理
+│   └── handler.py            # 网关层: 请求处理 + 热搜格式校验
 ├── router/
-│   └── react_router.py      # 路由层: ReAct 循环引擎
+│   └── react_router.py       # 路由层: ReAct 循环引擎 + 热搜工作流
 ├── tools/
-│   ├── base.py              # 工具基类
-│   ├── builtin.py           # 内置工具 (计算器/日期/搜索)
-│   ├── excel.py             # Excel 工具 (读取/写入 + 格式校验)
-│   └── registry.py          # 工具注册表
+│   ├── base.py               # 工具基类
+│   ├── builtin.py            # 内置工具 (计算器/日期/搜索)
+│   ├── excel.py              # Excel 工具 (读取/写入 + 格式校验)
+│   ├── file_utils.py         # 文件管理工具 (列出 Excel)
+│   ├── registry.py           # 工具注册表
+│   ├── robots.py             # robots.txt 合规检查 (RFC 9309)
+│   ├── web_scraper.py        # 单页抓取工具
+│   └── web_crawler.py        # 全网关键词爬虫
 └── models/
-    └── schemas.py           # Pydantic 数据模型
+    └── schemas.py            # Pydantic 数据模型
 ```

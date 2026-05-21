@@ -27,14 +27,14 @@ SYSTEM_PROMPT = """你是一个使用 ReAct（Reasoning + Acting）范式工作�
 爬取后从结果中提取每条热搜的：日期、关键词（从内容中提炼）、链接（URL）、内容简述。
 
 ### 步骤 4: 确认 Excel 文件
-调用 list_excel_files 工具查看当前目录下已有的 Excel 文件。
-- 如果没有文件 → 以平台英文名创建新文件（如 抖音→douyin_trending.xlsx, 微博→weibo_trending.xlsx）
+调用 list_excel_files 工具查看项目根目录（agent 的父目录）下已有的 Excel 文件。
+- 如果没有文件 → 以平台英文名在项目根目录创建新文件（如 抖音→../douyin_trending.xlsx, 微博→../weibo_trending.xlsx）
 - 如果有文件 → 在 Final Answer 中列出文件名，让用户选择要写入哪个文件
 - 用户选择后，在下一轮对话中用选定的文件写入
 
 ### 步骤 5: 写入 Excel
-使用 write_excel 工具写入数据。JSON 格式：
-{{"file":"文件名.xlsx", "sheet":"热搜", "data":[["日期","关键字","链接","内容"],["2026-05-22","关键字1","https://...","内容简述"],...]}}
+使用 write_excel 工具写入数据。文件路径必须使用 ../文件名.xlsx（写到项目根目录而非 agent 目录）。JSON 格式：
+{{"file":"../douyin_trending.xlsx", "sheet":"热搜", "data":[["日期","关键字","链接","内容"],["2026-05-22","关键字1","https://...","内容简述"],...]}}
 表头固定为四列：日期 | 关键字 | 链接 | 内容
 写入成功后告知用户文件路径。
 

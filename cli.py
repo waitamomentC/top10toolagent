@@ -7,6 +7,11 @@ import os
 import sys
 from pathlib import Path
 
+# Windows 终端 UTF-8 编码修复
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # 项目根目录加入 path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 

@@ -13,14 +13,10 @@ from tools.robots import check_meta_robots, check_robots_header, check_robots_tx
 
 # ── 常量 ──────────────────────────────────────────────────────────────
 
-MAX_CONTENT_LEN = 3000    # 正文截断长度
+MAX_CONTENT_LEN = 200     # 正文截断至摘要级别（版权安全）
 MAX_LINKS = 50            # 最多提取链接数
 TIMEOUT = 15              # 请求超时 (秒)
-UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/131.0.0.0 Safari/537.36"
-)
+UA = "GeoAgent/1.0 (compatible; +https://github.com/waitamomentC/top10toolagent)"
 
 # 发布时间相关的 meta / 属性名
 TIME_SELECTORS = [

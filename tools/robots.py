@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup
 
 # ── 常量 ──────────────────────────────────────────────────────────────
 
-UA_FULL = "GeoAgent/1.0 (compatible; +https://github.com/geo-agent)"
+UA_FULL = "GeoAgent/1.0 (compatible; +https://github.com/waitamomentC/top10toolagent)"
 CRAWL_DELAY = 3  # 默认爬取间隔（秒），如果 robots.txt 没有指定
 ROBOTS_TIMEOUT = 10  # 获取 robots.txt 的超时
 

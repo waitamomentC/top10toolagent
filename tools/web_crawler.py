@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 
 from models.schemas import ToolResult
 from tools.base import BaseTool
-from tools.robots import check_meta_robots, check_robots_header, check_robots_txt
+from tools.robots import check_meta_robots, check_robots_header, check_robots_txt, get_crawl_delay
 from tools.web_scraper import (
     UA,
     TIMEOUT,
@@ -96,6 +96,10 @@ class WebCrawlerTool(BaseTool):
                     state.blocked += 1
                     state.blocked_urls.append(f"{url} ({reason})")
                     continue
+
+                # ── 请求间隔: 遵守 robots.txt Crawl-Delay ─────────────────
+                delay = get_crawl_delay(url)
+                await asyncio.sleep(delay)
 
                 page = await _fetch_and_extract(client, url, state.keyword, cur_depth, state)
                 if page is None:

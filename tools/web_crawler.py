@@ -24,7 +24,7 @@ from tools.web_scraper import (
 # ── 爬虫参数 ──────────────────────────────────────────────────────────
 
 DEFAULT_DEPTH = 1
-DEFAULT_MAX_PAGES = 30
+DEFAULT_MAX_PAGES = 20
 DEFAULT_MIN_RELEVANT = 10
 SEARCH_RESULTS = 30  # 搜索种子数
 

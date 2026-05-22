@@ -52,6 +52,9 @@ class CrawlState:
     errors: list[str] = field(default_factory=list)
     blocked: int = 0
     blocked_urls: list[str] = field(default_factory=list)
+    total_bytes: int = 0
+    total_requests: int = 0
+    total_time: float = 0.0
 
 
 # ── 工具 ──────────────────────────────────────────────────────────────
@@ -213,6 +216,11 @@ async def _fetch_and_extract(
     except Exception:
         return None
 
+    # 累计网络统计
+    state.total_bytes += len(resp.content)
+    state.total_requests += 1
+    state.total_time += resp.elapsed.total_seconds()
+
     soup = BeautifulSoup(resp.text, "lxml")
 
     # ── 合规检查: meta robots ─────────────────────────────────────────
@@ -267,6 +275,19 @@ def _extract_link_urls(links_text: str) -> list[str]:
     return out
 
 
+def _format_network_stats(state: CrawlState) -> str:
+    """格式化网络流量统计"""
+    if state.total_requests == 0:
+        return "网络: 无请求"
+    kb = state.total_bytes / 1024
+    if kb >= 1024:
+        size_str = f"{kb / 1024:.1f} MB"
+    else:
+        size_str = f"{kb:.0f} KB"
+    rate = kb / state.total_time if state.total_time > 0 else 0
+    return f"网络: {size_str}  ·  请求 {state.total_requests} 次  ·  耗时 {state.total_time:.1f}s  ({rate:.0f} KB/s)"
+
+
 # ── 格式化输出 ────────────────────────────────────────────────────────
 
 def _format_output(state: CrawlState) -> str:
@@ -274,6 +295,7 @@ def _format_output(state: CrawlState) -> str:
         f"关键词: {state.keyword}",
         f"爬取页面数: {len(state.pages)}  相关页面数: {state.relevant_count}  被拦截: {state.blocked}",
         f"爬取深度: {state.depth}  上限: {state.max_pages}",
+        _format_network_stats(state),
         "=" * 50,
         "",
     ]

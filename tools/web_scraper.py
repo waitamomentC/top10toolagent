@@ -88,6 +88,10 @@ class WebScraperTool(BaseTool):
         except Exception as e:
             return ToolResult(success=False, data="", error=str(e))
 
+        # 流量统计
+        download_kb = len(resp.content) / 1024
+        elapsed = resp.elapsed.total_seconds()
+
         soup = BeautifulSoup(html, "lxml")
 
         # ── 合规检查 ②: meta robots ───────────────────────────────────
@@ -109,6 +113,7 @@ class WebScraperTool(BaseTool):
             f"URL: {final_url}",
             f"标题: {_extract_title(soup)}",
             f"发布时间: {publish_time}",
+            f"网络: {download_kb:.1f} KB  ·  耗时 {elapsed:.2f}s  ({download_kb / elapsed:.0f} KB/s)" if elapsed > 0 else f"网络: {download_kb:.1f} KB",
             "",
             "--- 链接 ---",
             links or "(无链接)",

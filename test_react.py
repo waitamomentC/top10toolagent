@@ -1,9 +1,11 @@
 """直接测试 ReAct Agent（绕过 HTTP，避免编码问题）"""
 import asyncio
-import sys
 import io
 import os
-sys.path.insert(0, "F:/project/项目二 GEO网页人工搬运/agent")
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 # 环境变量请在终端中设置:

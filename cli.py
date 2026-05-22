@@ -12,9 +12,6 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-# 项目根目录加入 path
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
 CONFIG_DIR = Path.home() / ".top10tool"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
@@ -121,13 +118,9 @@ async def repl(cfg: dict) -> None:
             print(f"  API:  {cfg['llm_base_url']}")
             continue
         if query.lower() == "/uninstall":
-            print(f"  配置文件: {CONFIG_FILE}")
-            print(f"  运行卸载脚本以彻底清除：")
-            agent_dir = Path(__file__).resolve().parent
-            if sys.platform == "win32":
-                print(f"    {agent_dir / 'uninstall.bat'}")
-            else:
-                print(f"    bash {agent_dir / 'uninstall.sh'}")
+            print("  卸载方法:")
+            print("    pip uninstall top10tool -y")
+            print(f"  配置文件: {CONFIG_FILE}（手动删除）")
             continue
 
         print("⏳ 处理中...", end="\r")

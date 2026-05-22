@@ -1,8 +1,10 @@
 """步骤: ①获取具体日期 → ②用具体日期关键词爬取 → ③直接抓取已发现的热榜页"""
 import asyncio
-import sys
 import io
-sys.path.insert(0, "F:/project/项目二 GEO网页人工搬运/agent")
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 from tools.builtin import DateTimeTool

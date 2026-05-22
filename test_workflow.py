@@ -1,6 +1,11 @@
 """测试完整工作流: 格式校验 → ReAct → Excel"""
-import asyncio, sys, io, os
-sys.path.insert(0, "F:/project/项目二 GEO网页人工搬运/agent")
+import asyncio
+import io
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 # 环境变量请在终端中设置

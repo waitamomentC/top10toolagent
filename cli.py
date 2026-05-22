@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -142,11 +143,37 @@ async def chat_loop(cfg: dict) -> None:
             console.print(f"  [dim]配置: {CONFIG_FILE}（手动删除）[/dim]")
             console.print()
             continue
+        if query.lower() == "/modify":
+            cfg = setup_wizard()
+            llm = OpenAILLM(
+                api_key=cfg["llm_api_key"],
+                base_url=cfg["llm_base_url"],
+                model=cfg["llm_model"],
+            )
+            router = ReActRouter(llm=llm, registry=reg)
+            console.print(f"  [green]✅ 已切换到 {cfg['llm_model']}[/green]\n")
+            continue
 
-        # ── 执行 Agent ──
+        # ── 问候语拦截 ──
+        greeting = re.match(
+            r"^(你好|您好|嗨|hi|hello|hey|早|早上好|中午好|晚上好|下午好|在吗|在不在|在不)[!！。.～~]*$",
+            query, re.IGNORECASE
+        )
+        if greeting:
+            console.print()
+            console.print(Markdown(
+                "你好！👋 我是 **top10tool**，热搜 TOP10 智能助手。\n\n"
+                "输入「**当日抖音热搜**」「**当日微博热搜**」等指令开始爬取热搜数据。\n"
+                "也可以直接跟我聊天，或输入算式让我计算。"
+            ))
+            console.print()
+            continue
+
+        # ── 执行 Agent（带进度条） ──
         console.print()
         try:
-            result = await router.run(query, max_steps=12)
+            with console.status("[dim]● 思考中...[/dim]", spinner="dots"):
+                result = await router.run(query, max_steps=12)
         except Exception as e:
             console.print(f"  [red]出错: {e}[/red]\n")
             continue

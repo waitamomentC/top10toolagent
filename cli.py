@@ -144,26 +144,14 @@ async def chat_loop(cfg: dict) -> None:
             console.print()
             continue
         if query.lower() == "/modify":
-            old_cfg = dict(cfg)
             cfg = setup_wizard()
-            test_llm = OpenAILLM(
+            llm = OpenAILLM(
                 api_key=cfg["llm_api_key"],
                 base_url=cfg["llm_base_url"],
                 model=cfg["llm_model"],
             )
-            # 验证连接
-            try:
-                with console.status("[dim]● 测试连接...[/dim]", spinner="dots"):
-                    await test_llm.chat([{"role": "user", "content": "hi"}])
-            except Exception as e:
-                console.print(f"  [red]❌ 连接失败: {e}[/red]")
-                console.print(f"  [dim]已回退到旧配置 ({old_cfg['llm_model']})[/dim]\n")
-                cfg = old_cfg
-                save_config(old_cfg)
-                continue
-            llm = test_llm
             router = ReActRouter(llm=llm, registry=reg)
-            console.print(f"  [green]✅ 连接成功，已切换到 {cfg['llm_model']}[/green]\n")
+            console.print(f"  [green]✅ 配置已更新: {cfg['llm_model']}[/green]\n")
             continue
 
         # ── 问候语拦截 ──

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import math
 
@@ -40,15 +41,56 @@ class DateTimeTool(BaseTool):
 
 
 class WebSearchTool(BaseTool):
-    name = "search"
-    description = "搜索互联网信息。输入搜索关键词，返回模拟搜索结果。（生产环境请接入真实搜索 API）"
+    name = "web_search"
+    description = (
+        "联网搜索。输入搜索关键词，返回搜索结果列表（标题、URL、摘要）。"
+        "用于获取实时信息、验证事实、查找最新资讯等。"
+    )
 
     async def execute(self, input_str: str) -> ToolResult:
-        # 模拟搜索 —— 生产环境接入 SerpAPI / Tavily / Bing 等
         q = input_str.strip()
-        mock = {
-            "天气": f"'{q}' 搜索结果: 今日多云转晴，气温 22-28°C，空气质量良。",
-            "新闻": f"'{q}' 搜索结果: 今日头条 —— AI 技术持续突破，各大厂商加速布局。",
-        }
-        data = mock.get(q, f"'{q}' 的搜索结果: 这是一个模拟搜索返回。请在生产中接入真实搜索引擎。")
-        return ToolResult(success=True, data=data)
+        results = await _duckduckgo_search(q)
+        if not results:
+            return ToolResult(success=False, data="", error=f"关键词 '{q}' 无搜索结果")
+        lines = [f"搜索: {q}", ""]
+        for i, r in enumerate(results, 1):
+            lines.append(f"{i}. {r['title']}")
+            lines.append(f"   {r['url']}")
+            lines.append(f"   {r['snippet']}")
+            lines.append("")
+        return ToolResult(success=True, data="\n".join(lines))
+
+
+async def _duckduckgo_search(keyword: str, max_results: int = 10) -> list[dict]:
+    """DuckDuckGo 搜索，返回 [{title, url, snippet}, ...]"""
+    # 方案 A: ddgs (新版)
+    try:
+        from ddgs import DDGS
+        loop = asyncio.get_running_loop()
+        raw = await loop.run_in_executor(
+            None,
+            lambda: list(DDGS().text(keyword, max_results=max_results)),
+        )
+        return [
+            {"title": r["title"], "url": r["href"], "snippet": r.get("body", "")}
+            for r in raw if r.get("href")
+        ]
+    except Exception:
+        pass
+
+    # 方案 B: duckduckgo_search (旧版)
+    try:
+        from duckduckgo_search import DDGS
+        loop = asyncio.get_running_loop()
+        raw = await loop.run_in_executor(
+            None,
+            lambda: list(DDGS().text(keyword, max_results=max_results)),
+        )
+        return [
+            {"title": r["title"], "url": r["href"], "snippet": r.get("body", "")}
+            for r in raw if r.get("href")
+        ]
+    except Exception:
+        pass
+
+    return []

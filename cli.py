@@ -278,6 +278,7 @@ def check_for_updates() -> bool:
     if repo is None:
         return True  # 非 git 环境，跳过检查
 
+    console.print(f"  [dim]检查更新...[/dim]")
     try:
         subprocess.run(
             ["git", "fetch", "origin"],
@@ -301,6 +302,7 @@ def check_for_updates() -> bool:
         return True
 
     if behind == 0:
+        console.print(f"  [dim]已是最新版本 ✓[/dim]")
         return True
 
     # 有新提交 → 展示并询问

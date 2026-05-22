@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""top10tool — 终端 ReAct Agent 交互工具"""
+"""top10tool — 热搜 TOP10 智能工具 终端聊天界面"""
 from __future__ import annotations
 
 import json
@@ -7,25 +7,43 @@ import os
 import sys
 from pathlib import Path
 
-# Windows 终端 UTF-8 编码修复
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+
+# Windows 终端 UTF-8
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+console = Console(highlight=False)
 CONFIG_DIR = Path.home() / ".top10tool"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
-BANNER = r"""
-   ╔══════════════════════════════════════╗
-   ║  ████████╗ ██████╗ ██████╗  ██╗ ██████╗  ║
-   ║  ╚══██╔══╝██╔═══██╗██╔══██╗███║ ╚════██╗ ║
-   ║     ██║   ██║   ██║██████╔╝╚██║  █████╔╝ ║
-   ║     ██║   ██║   ██║██╔═══╝  ██║  ╚═══██╗ ║
-   ║     ██║   ╚██████╔╝██║      ██║ ██████╔╝ ║
-   ║     ╚═╝    ╚═════╝ ╚═╝      ╚═╝ ╚═════╝  ║
-   ║        🔧 热搜 TOP10 智能工具 🔧         ║
-   ╚══════════════════════════════════════╝
-"""
+# ── 红色扳手 ASCII ──
+WRENCH = r"""[red]
+    ▐███▌
+   ███████
+   ██   ██
+   ██   ██
+   ██   ██
+   ███████
+    █████
+     ███
+     ███
+     ███
+     ███
+     ███
+     ███
+    █████
+   ███████
+  █████████[/red]"""
+
+HEADER = Panel(
+    WRENCH + "\n[bold white]top10tool[/bold white]",
+    subtitle="[dim]热搜 TOP10 智能工具[/dim]",
+    border_style="red",
+    padding=(1, 4),
+)
 
 
 def load_config() -> dict | None:
@@ -44,35 +62,34 @@ def save_config(cfg: dict) -> None:
 
 
 def setup_wizard() -> dict:
-    """首次运行: 引导用户配置 LLM"""
-    print("\n🔧 首次运行 — 请配置 LLM 连接信息\n")
-
-    print("支持平台: OpenAI / DeepSeek / 阿里百炼 / Ollama 等")
-    print("格式: OpenAI 兼容 API\n")
+    console.print()
+    console.print("🔧 [bold]首次运行 — 请配置 LLM 连接信息[/bold]")
+    console.print("[dim]支持平台: OpenAI / DeepSeek / 阿里百炼 / Ollama 等[/dim]")
+    console.print("[dim]格式: OpenAI 兼容 API[/dim]")
+    console.print()
 
     base_url = input("  API 地址 (BASE_URL): ").strip()
     if not base_url:
         base_url = "https://api.deepseek.com"
-        print(f"  → 使用默认: {base_url}")
+        console.print(f"  [dim]→ 使用默认: {base_url}[/dim]")
 
     api_key = input("  API Key: ").strip()
     while not api_key:
-        print("  ⚠️  API Key 不能为空")
+        console.print("  [red]⚠️  API Key 不能为空[/red]")
         api_key = input("  API Key: ").strip()
 
     model = input("  模型名称 (如 deepseek-chat, gpt-4o-mini): ").strip()
     if not model:
         model = "deepseek-chat"
-        print(f"  → 使用默认: {model}")
+        console.print(f"  [dim]→ 使用默认: {model}[/dim]")
 
     cfg = {"llm_base_url": base_url, "llm_api_key": api_key, "llm_model": model}
     save_config(cfg)
-    print(f"\n✅ 配置已保存到 {CONFIG_FILE}\n")
+    console.print(f"\n[green]✅ 配置已保存到 {CONFIG_FILE}[/green]\n")
     return cfg
 
 
-async def repl(cfg: dict) -> None:
-    """交互式 ReAct 循环"""
+async def chat_loop(cfg: dict) -> None:
     from core.llm import OpenAILLM
     from router.react_router import ReActRouter
     from tools.builtin import CalculatorTool, DateTimeTool, WebSearchTool
@@ -97,43 +114,55 @@ async def repl(cfg: dict) -> None:
     )
     router = ReActRouter(llm=llm, registry=reg)
 
-    print(BANNER)
-    print(f"模型: {cfg['llm_model']}  |  工具: {reg.tool_names()}")
-    print("输入 '当日XXX热搜' 开始爬取，输入 /exit 退出\n")
+    # ── 聊天界面头部 ──
+    console.print(HEADER)
+    console.print(f"  [dim]模型: {cfg['llm_model']}  ·  工具: {reg.tool_names()}[/dim]")
+    console.print(f"  [dim]{'─' * 56}[/dim]")
+    console.print()
 
     while True:
         try:
-            query = input("▶ ").strip()
+            query = console.input(f"[bold blue]>[/bold blue] ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\n👋 再见")
+            console.print("\n  👋 再见\n")
             break
 
         if not query:
             continue
         if query.lower() in ("/exit", "/quit", "/q"):
-            print("👋 再见")
+            console.print("  👋 再见\n")
             break
         if query.lower() == "/config":
-            print(f"  模型: {cfg['llm_model']}")
-            print(f"  API:  {cfg['llm_base_url']}")
+            console.print(f"  [dim]模型: {cfg['llm_model']}[/dim]")
+            console.print(f"  [dim]API:  {cfg['llm_base_url']}[/dim]")
+            console.print()
             continue
         if query.lower() == "/uninstall":
-            print("  卸载方法:")
-            print("    pip uninstall top10tool -y")
-            print(f"  配置文件: {CONFIG_FILE}（手动删除）")
+            console.print(f"  [dim]卸载: pip uninstall top10tool -y[/dim]")
+            console.print(f"  [dim]配置: {CONFIG_FILE}（手动删除）[/dim]")
+            console.print()
             continue
 
-        print("⏳ 处理中...", end="\r")
+        # ── 执行 Agent ──
+        console.print()
         try:
             result = await router.run(query, max_steps=12)
-            print(f"\n{'─' * 50}")
-            print(result.answer)
-            print(f"{'─' * 50}")
-            if result.tool_calls:
-                print(f"🔧 调用工具 {len(result.tool_calls)} 次: {', '.join(tc.tool_name for tc in result.tool_calls)}")
-            print()
         except Exception as e:
-            print(f"\n❌ 出错: {e}\n")
+            console.print(f"  [red]出错: {e}[/red]\n")
+            continue
+
+        # 回复内容
+        console.print(Markdown(result.answer))
+
+        # 工具调用
+        if result.tool_calls:
+            tags = "  ".join(
+                f"[yellow]●[/yellow] [bold]{tc.tool_name}[/bold]"
+                for tc in result.tool_calls
+            )
+            console.print(f"\n  [dim]{tags}[/dim]")
+
+        console.print()
 
 
 def main():
@@ -142,7 +171,7 @@ def main():
         cfg = setup_wizard()
 
     import asyncio
-    asyncio.run(repl(cfg))
+    asyncio.run(chat_loop(cfg))
 
 
 if __name__ == "__main__":

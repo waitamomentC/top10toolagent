@@ -1,12 +1,12 @@
 # top10tool — 热搜 TOP10 智能工具
 
-基于 **ReAct（Reasoning + Acting）范式** 的轻量级智能 Agent。支持**终端交互式 CLI** 和 **FastAPI HTTP 服务**两种使用方式。
+基于 **ReAct（Reasoning + Acting）范式** 的轻量级智能 Agent。终端聊天式交互界面，类 ChatGPT/Claude 对话体验。
 
 ---
 
-## 终端 CLI 全局安装
+## 全局安装
 
-一处安装，全局可用。在任何终端直接输入 `top10tool` 即可启动。
+一处安装，全局可用。
 
 ### 1. 下载 & 安装
 
@@ -15,9 +15,9 @@ git clone https://github.com/waitamomentC/top10toolagent.git
 pip install ./top10toolagent
 ```
 
-安装后自动创建 `top10tool` 命令到 Python bin/Scripts 目录（天然在系统 PATH 中）。
+安装后自动创建 `top10tool` 命令（Python Scripts 目录，天然在系统 PATH 中）。
 
-> 如果 pip 提示 `pip: command not found`，换成 `python -m pip install ./top10toolagent` 或 `python3 -m pip install ./top10toolagent`。
+> 如果 pip 提示 `command not found`，换用 `python3 -m pip install ./top10toolagent`。
 
 ### 2. 启动
 
@@ -27,11 +27,11 @@ pip install ./top10toolagent
 top10tool
 ```
 
-首次运行会引导配置 LLM（API 地址、Key、模型）。
+首次运行会引导配置 LLM 连接信息（API 地址、Key、模型）。配置一次即可，之后直接进入聊天界面。
 
-### 3. CLI 命令
+### 3. 聊天命令
 
-| 命令 | 说明 |
+| 输入 | 说明 |
 |------|------|
 | `当日XXX热搜` | 爬取指定平台热搜（如 `当日抖音热搜`、`当日微博热搜`） |
 | `/config` | 查看当前 LLM 配置 |

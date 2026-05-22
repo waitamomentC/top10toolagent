@@ -92,6 +92,25 @@ def setup_wizard() -> dict:
     return cfg
 
 
+def _render_crawl_event(ev: dict) -> None:
+    """渲染爬虫实时进度事件"""
+    phase = ev.get("phase", "")
+    if phase == "search":
+        console.print(f"    [bold cyan]🔍[/bold cyan] [dim]{ev['message']}[/dim]")
+    elif phase == "fetch":
+        url_short = ev["url"][:80]
+        status = ev["status"]
+        page_num = ev.get("page_num", 0)
+        title = (ev.get("title") or "")[:50]
+        if status == "ok":
+            rel = "★" if ev.get("relevant") else " "
+            console.print(f"    [green]✓[/green] [{page_num}] {rel} [dim]{title}[/dim] [dim]({url_short})[/dim]")
+        elif status == "blocked":
+            console.print(f"    [red]⊘[/red] [{page_num}] [dim]被拦截: {url_short}[/dim]")
+        elif status == "fail":
+            console.print(f"    [red]✗[/red] [{page_num}] [dim]抓取失败: {url_short}[/dim]")
+
+
 async def chat_loop(cfg: dict) -> None:
     from core.llm import OpenAILLM
     from router.react_router import ReActRouter
@@ -192,6 +211,8 @@ async def chat_loop(cfg: dict) -> None:
                         f"[dim]{ev['tool']} → {obs_preview}[/dim]"
                     )
                     tools_used.append(ev["tool"])
+                elif ev["type"] == "crawl":
+                    _render_crawl_event(ev)
                 elif ev["type"] == "step" and ev["status"] == "done":
                     pass  # tool result already shown
                 elif ev["type"] == "done":

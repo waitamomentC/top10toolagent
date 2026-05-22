@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from core.llm import BaseLLM
-from models.schemas import AgentResponse, AgentStep, ThoughtAction, ToolCallRecord
+from models.schemas import AgentResponse, AgentStep, ThoughtAction, ToolCallRecord, ToolResult
 from tools.registry import ToolRegistry
 
 # ── ReAct Prompt 模板 ────────────────────────────────────────────────
@@ -160,6 +160,32 @@ class ReActRouter:
                         "arguments": parsed.action_input or "",
                         "result": observation[:500],
                     }
+            elif hasattr(tool, "stream_execute"):
+                yield {
+                    "type": "step",
+                    "step": i,
+                    "thought": parsed.thought,
+                    "action": parsed.action,
+                    "action_input": parsed.action_input or "",
+                    "status": "running",
+                }
+                tool_result = None
+                async for ev in tool.stream_execute(parsed.action_input or ""):
+                    if ev.get("_done"):
+                        tool_result = ToolResult(success=ev["success"], data=ev["data"], error=ev.get("error", ""))
+                    else:
+                        yield {**ev, "type": "crawl", "step": i}
+                if tool_result is None:
+                    observation = "工具执行失败: 流式执行未返回结果"
+                else:
+                    observation = tool_result.data if tool_result.success else f"工具执行失败: {tool_result.error}"
+                yield {
+                    "type": "tool",
+                    "step": i,
+                    "tool": parsed.action,
+                    "arguments": parsed.action_input or "",
+                    "result": observation[:500],
+                }
             else:
                 yield {
                     "type": "step",

@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import deque
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 from bs4 import BeautifulSoup
@@ -27,6 +30,79 @@ DEFAULT_DEPTH = 1
 DEFAULT_MAX_PAGES = 20
 DEFAULT_MIN_RELEVANT = 10
 SEARCH_RESULTS = 30  # 搜索种子数
+
+# ── 缓存 ────────────────────────────────────────────────────────────────
+CACHE_DIR = Path.home() / ".top10tool"
+CACHE_FILE = CACHE_DIR / "crawl_cache.json"
+
+# 常见平台名 → 用于缓存键匹配
+_PLATFORM_PATTERNS = [
+    "抖音", "微博", "知乎", "bilibili", "B站",
+    "百度", "头条", "快手", "小红书", "微信",
+    "豆瓣", "虎扑", "贴吧", "天涯", "搜狐",
+    "网易", "腾讯", "新浪", "凤凰",
+]
+
+
+def _extract_platform(keyword: str) -> str | None:
+    """从搜索关键词中提取平台名"""
+    for p in _PLATFORM_PATTERNS:
+        if p.lower() in keyword.lower():
+            return p
+    # fallback: 用关键词本身的前几个字
+    return keyword[:6]
+
+
+def _load_cache() -> dict:
+    """加载缓存 {平台名: {urls: [...], updated: '...'}}"""
+    try:
+        if CACHE_FILE.exists():
+            return json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _save_cache(cache: dict) -> None:
+    """保存缓存到文件"""
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        CACHE_FILE.write_text(json.dumps(cache, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _get_cached_urls(keyword: str) -> list[str]:
+    """获取该平台的历史爬取 URL（最近 7 天内有效）"""
+    platform = _extract_platform(keyword)
+    cache = _load_cache()
+    entry = cache.get(platform)
+    if not entry:
+        return []
+    # 检查缓存是否过期（7 天）
+    updated = entry.get("updated", "")
+    try:
+        if updated:
+            dt = datetime.fromisoformat(updated)
+            age_days = (datetime.now(timezone.utc) - dt).days
+            if age_days > 7:
+                return []
+    except Exception:
+        return []
+    return entry.get("urls", [])
+
+
+def _update_cache(keyword: str, urls: list[str]) -> None:
+    """更新缓存：追加新 URL，去重，限制数量"""
+    platform = _extract_platform(keyword)
+    cache = _load_cache()
+    existing = set(cache.get(platform, {}).get("urls", []))
+    existing.update(urls)
+    cache[platform] = {
+        "urls": list(existing)[:100],  # 最多 100 条
+        "updated": datetime.now(timezone.utc).isoformat(),
+    }
+    _save_cache(cache)
 
 
 @dataclass
@@ -68,7 +144,13 @@ class WebCrawlerTool(BaseTool):
     )
 
     async def execute(self, input_str: str) -> ToolResult:
-        # ── 解析参数 ──────────────────────────────────────────────────
+        async for ev in self.stream_execute(input_str):
+            if ev.get("_done"):
+                return ToolResult(**ev)
+        return ToolResult(success=False, data="", error="流式执行未返回结果")
+
+    async def stream_execute(self, input_str: str) -> AsyncGenerator[dict, None]:
+        """流式爬取 — 实时 yield 进度事件，最后 yield ToolResult 字典（含 _done=True）"""
         kw, depth, max_pages, min_rel = _parse_input(input_str)
 
         state = CrawlState(
@@ -78,13 +160,33 @@ class WebCrawlerTool(BaseTool):
             min_relevant=min_rel,
         )
 
-        # ── 第一步: 搜索引擎获取种子 URL ──────────────────────────────
-        seed_urls = await _search_keyword(kw)
-        if not seed_urls:
-            return ToolResult(success=False, data="", error=f"关键词 '{kw}' 搜索无结果")
+        # ── 第一步: 检查缓存 + 搜索种子 URL ────────────────────────────────
+        cached = _get_cached_urls(kw)
+        if cached:
+            yield {"phase": "search", "message": f"缓存命中 {len(cached)} 个站点，优先爬取", "keyword": kw, "cached": len(cached)}
 
-        # ── 第二步: BFS 爬取 ──────────────────────────────────────────
-        queue: deque[tuple[str, int]] = deque((u, 0) for u in seed_urls)
+        yield {"phase": "search", "message": f"正在搜索关键词「{kw}」...", "keyword": kw}
+        seed_urls = await _search_keyword(kw)
+        if not seed_urls and not cached:
+            yield {"success": False, "data": "", "error": f"关键词 '{kw}' 搜索无结果", "_done": True}
+            return
+        total_seeds = len(cached) + len(seed_urls)
+        yield {"phase": "search", "message": f"共获取 {total_seeds} 个种子页面（缓存 {len(cached)} + 搜索 {len(seed_urls)}）", "found": total_seeds}
+
+        # 缓存 URL 优先
+        all_seeds: list[str] = []
+        seen_seeds: set[str] = set()
+        for u in cached:
+            if u not in seen_seeds:
+                all_seeds.append(u)
+                seen_seeds.add(u)
+        for u in seed_urls:
+            if u not in seen_seeds:
+                all_seeds.append(u)
+                seen_seeds.add(u)
+
+        # ── 第二步: BFS 爬取 ─────────────────────────────────────────────
+        queue: deque[tuple[str, int]] = deque((u, 0) for u in all_seeds)
 
         async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
             while queue and len(state.pages) < state.max_pages:
@@ -93,44 +195,66 @@ class WebCrawlerTool(BaseTool):
                     continue
                 state.visited.add(url)
 
-                # ── 合规检查: robots.txt ──────────────────────────────────
+                # 合规检查: robots.txt
                 allowed, reason = await check_robots_txt(url)
                 if not allowed:
                     state.blocked += 1
                     state.blocked_urls.append(f"{url} ({reason})")
+                    yield {
+                        "phase": "fetch", "url": url, "status": "blocked",
+                        "reason": reason, "page_num": len(state.pages),
+                    }
                     continue
 
-                # ── 请求间隔: 遵守 robots.txt Crawl-Delay ─────────────────
+                # 请求间隔
                 delay = get_crawl_delay(url)
                 await asyncio.sleep(delay)
 
                 page = await _fetch_and_extract(client, url, state.keyword, cur_depth, state)
                 if page is None:
+                    yield {
+                        "phase": "fetch", "url": url, "status": "fail",
+                        "page_num": len(state.pages),
+                    }
                     continue
 
                 is_relevant = page.keyword_count > 0
                 if is_relevant:
                     state.relevant_count += 1
-
                 state.pages.append(page)
 
-                # 如果还不够相关结果数，继续往下挖链接
+                kb = 0  # 估算
+                yield {
+                    "phase": "fetch", "url": url, "title": page.title,
+                    "status": "ok", "relevant": is_relevant,
+                    "page_num": len(state.pages), "total": "?",
+                    "depth": cur_depth, "kb": kb,
+                }
+
+                # 不够相关结果数 → 继续挖链接
                 if state.relevant_count < state.min_relevant and cur_depth < state.depth:
                     sub_urls = _extract_link_urls(page.links_text)
                     for sub in sub_urls:
                         if len(queue) + len(state.pages) < state.max_pages + 30:
                             queue.append((sub, cur_depth + 1))
 
-                # 提前终止: 达到最小相关数 且 接近上限
+                # 提前终止
                 if state.relevant_count >= state.min_relevant and len(state.pages) >= state.max_pages:
                     break
 
-        # ── 第三步: 格式化输出 ────────────────────────────────────────
+        # ── 第三步: 更新缓存 + 返回结果 ────────────────────────────────────
+        if state.pages:
+            # 把相关页面 URL 写入缓存，下次直接从这些站爬
+            cached_urls = [p.url for p in state.pages if p.keyword_count > 0]
+            if cached_urls:
+                _update_cache(kw, cached_urls)
+
         if not state.pages:
-            return ToolResult(success=False, data="", error=f"关键词 '{kw}' 未爬取到任何页面")
+            yield {"success": False, "data": "", "error": f"关键词 '{kw}' 未爬取到任何页面", "_done": True}
+            return
 
         result = _format_output(state)
-        return ToolResult(success=True, data=result)
+        yield {"success": True, "data": result, "error": "", "_done": True}
 
 
 # ── 解析输入 ──────────────────────────────────────────────────────────

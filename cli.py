@@ -377,7 +377,7 @@ def check_for_updates() -> bool:
     # pip reinstall
     try:
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--force-reinstall", str(repo)],
+            [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-deps", str(repo)],
             check=True,
             timeout=120,
         )

@@ -32,8 +32,7 @@ DEFAULT_MIN_RELEVANT = 10
 SEARCH_RESULTS = 30  # 搜索种子数
 
 # ── 缓存 ────────────────────────────────────────────────────────────────
-CACHE_DIR = Path.home() / ".top10tool"
-CACHE_FILE = CACHE_DIR / "crawl_cache.json"
+_CACHE_DIR = Path.home() / ".top10tool" / "cache"
 
 # 常见平台名 → 用于缓存键匹配
 _PLATFORM_PATTERNS = [
@@ -44,65 +43,150 @@ _PLATFORM_PATTERNS = [
 ]
 
 
-def _extract_platform(keyword: str) -> str | None:
+def _extract_platform(keyword: str) -> str:
     """从搜索关键词中提取平台名"""
     for p in _PLATFORM_PATTERNS:
         if p.lower() in keyword.lower():
             return p
-    # fallback: 用关键词本身的前几个字
     return keyword[:6]
 
 
-def _load_cache() -> dict:
-    """加载缓存 {平台名: {urls: [...], updated: '...'}}"""
-    try:
-        if CACHE_FILE.exists():
-            return json.loads(CACHE_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-    return {}
-
-
-def _save_cache(cache: dict) -> None:
-    """保存缓存到文件"""
-    try:
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        CACHE_FILE.write_text(json.dumps(cache, indent=2, ensure_ascii=False), encoding="utf-8")
-    except Exception:
-        pass
+def _cache_path(platform: str) -> Path:
+    """缓存文件路径: ~/.top10tool/cache/{平台}.md"""
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return _CACHE_DIR / f"{platform}.md"
 
 
 def _get_cached_urls(keyword: str) -> list[str]:
-    """获取该平台的历史爬取 URL（最近 7 天内有效）"""
+    """
+    读取平台缓存，按成功率从高到低返回 URL 列表。
+    仅返回成功率 > 0 的 URL，7 天未更新的条目自动淘汰。
+    """
     platform = _extract_platform(keyword)
-    cache = _load_cache()
-    entry = cache.get(platform)
-    if not entry:
+    path = _cache_path(platform)
+    if not path.exists():
         return []
-    # 检查缓存是否过期（7 天）
-    updated = entry.get("updated", "")
+
+    entries: list[tuple[float, str]] = []
+    now = datetime.now(timezone.utc)
     try:
-        if updated:
-            dt = datetime.fromisoformat(updated)
-            age_days = (datetime.now(timezone.utc) - dt).days
-            if age_days > 7:
-                return []
+        text = path.read_text(encoding="utf-8")
+        for line in text.split("\n"):
+            line = line.strip()
+            # 解析表格行: | url | date | rate% | hits/attempts |
+            if not line.startswith("|") or "---" in line or "URL" in line:
+                continue
+            cols = [c.strip() for c in line.strip("|").split("|")]
+            if len(cols) < 3:
+                continue
+            url = cols[0]
+            date_str = cols[1] if len(cols) > 1 else ""
+            try:
+                last_date = datetime.fromisoformat(date_str)
+            except Exception:
+                last_date = None
+            # 7 天淘汰
+            if last_date and (now - last_date).days > 7:
+                continue
+            # 成功率
+            try:
+                rate = float(cols[2].rstrip("%")) if len(cols) > 2 else 0
+            except Exception:
+                rate = 0
+            if rate > 0:
+                entries.append((rate, url))
     except Exception:
         return []
-    return entry.get("urls", [])
+
+    # 按成功率从大到小排序
+    entries.sort(key=lambda x: x[0], reverse=True)
+    return [url for _, url in entries]
 
 
-def _update_cache(keyword: str, urls: list[str]) -> None:
-    """更新缓存：追加新 URL，去重，限制数量"""
+def _update_cache_after_crawl(keyword: str, results: list[tuple[str, bool]]) -> None:
+    """
+    爬取完成后更新缓存。
+    results: [(url, was_valid), ...]
+      - was_valid=True  → 成功次数 +1, 抓取次数 +1
+      - was_valid=False → 仅抓取次数 +1
+    新 URL 第一次被抓取且有效 → 初始 1/1
+    """
     platform = _extract_platform(keyword)
-    cache = _load_cache()
-    existing = set(cache.get(platform, {}).get("urls", []))
-    existing.update(urls)
-    cache[platform] = {
-        "urls": list(existing)[:100],  # 最多 100 条
-        "updated": datetime.now(timezone.utc).isoformat(),
-    }
-    _save_cache(cache)
+    path = _cache_path(platform)
+
+    # 读取现有缓存
+    existing: dict[str, tuple[int, int, str]] = {}  # url → (hits, attempts, last_date)
+    if path.exists():
+        try:
+            text = path.read_text(encoding="utf-8")
+            for line in text.split("\n"):
+                line = line.strip()
+                if not line.startswith("|") or "---" in line or "URL" in line:
+                    continue
+                cols = [c.strip() for c in line.strip("|").split("|")]
+                if len(cols) < 3:
+                    continue
+                url = cols[0]
+                last_date = cols[1]
+                # 解析 命中/抓取
+                stats = cols[3] if len(cols) > 3 else "0/0"
+                try:
+                    h, a = stats.split("/")
+                    hits, attempts = int(h), int(a)
+                except Exception:
+                    hits, attempts = 0, 0
+                existing[url] = (hits, attempts, last_date)
+        except Exception:
+            pass
+
+    # 更新统计数据
+    now_str = datetime.now(timezone.utc).isoformat(timespec="minutes")
+    for url, was_valid in results:
+        if url in existing:
+            hits, attempts, _ = existing[url]
+            existing[url] = (
+                hits + (1 if was_valid else 0),
+                attempts + 1,
+                now_str,
+            )
+        elif was_valid:
+            existing[url] = (1, 1, now_str)
+        # 无效的新 URL 不录入
+
+    # 淘汰长期无更新的 URL（>30 天）
+    now = datetime.now(timezone.utc)
+    stale: list[str] = []
+    for url, (_, _, last_date) in existing.items():
+        try:
+            dt = datetime.fromisoformat(last_date)
+            if (now - dt).days > 30:
+                stale.append(url)
+        except Exception:
+            pass
+    for url in stale:
+        del existing[url]
+
+    if not existing:
+        return
+
+    # 写入 Markdown 文件
+    lines = [
+        f"# {platform} 爬虫URL缓存",
+        f"> 最后更新: {now_str}",
+        "",
+        "| URL | 最后抓取 | 成功率 | 命中/抓取 |",
+        "|-----|----------|--------|----------|",
+    ]
+    # 按成功率从大到小排序
+    sorted_entries = sorted(existing.items(), key=lambda x: x[1][0] / max(x[1][1], 1), reverse=True)
+    for url, (hits, attempts, last_date) in sorted_entries:
+        rate = f"{hits / max(attempts, 1) * 100:.0f}%"
+        lines.append(f"| {url} | {last_date} | {rate} | {hits}/{attempts} |")
+
+    try:
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except Exception:
+        pass
 
 
 @dataclass
@@ -244,10 +328,8 @@ class WebCrawlerTool(BaseTool):
 
         # ── 第三步: 更新缓存 + 返回结果 ────────────────────────────────────
         if state.pages:
-            # 把相关页面 URL 写入缓存，下次直接从这些站爬
-            cached_urls = [p.url for p in state.pages if p.keyword_count > 0]
-            if cached_urls:
-                _update_cache(kw, cached_urls)
+            results = [(p.url, p.keyword_count > 0) for p in state.pages]
+            _update_cache_after_crawl(kw, results)
 
         if not state.pages:
             yield {"success": False, "data": "", "error": f"关键词 '{kw}' 未爬取到任何页面", "_done": True}

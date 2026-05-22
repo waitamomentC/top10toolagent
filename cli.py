@@ -92,6 +92,43 @@ def setup_wizard() -> dict:
     return cfg
 
 
+async def _trending_fast_path(platform: str, reg) -> None:
+    """「当日XXX热搜」直通 — 不走 LLM，直接调爬虫"""
+    from datetime import datetime
+    from tools.web_crawler import WebCrawlerTool
+
+    now = datetime.now()
+    date_str = f"{now.year}年{now.month}月{now.day}日"
+    keyword = f"{platform}热榜 {date_str}"
+
+    console.print()
+    console.print(f"  [bold cyan]⚡ 热搜直通[/bold cyan] [dim]平台: {platform}[/dim]")
+    console.print(f"  [dim]关键词: {keyword}[/dim]")
+    console.print()
+
+    crawler = WebCrawlerTool()
+    page_count = 0
+    try:
+        async for ev in crawler.stream_execute(keyword):
+            if ev.get("_done"):
+                if ev.get("success"):
+                    console.print()
+                    console.print(f"  [bold green]✅ 爬取完成[/bold green]")
+                    console.print(f"  [dim]结果摘要已生成，下一步可写入 Excel[/dim]")
+                    # 截取前 500 字符作为预览
+                    preview = ev.get("data", "")[:800]
+                    console.print(f"  [dim]{preview}[/dim]")
+                else:
+                    console.print(f"  [red]爬取失败: {ev.get('error', '未知错误')}[/red]")
+            else:
+                _render_crawl_event(ev)
+                page_count = ev.get("page_num", page_count)
+    except Exception as e:
+        console.print(f"  [red]爬虫出错: {e}[/red]")
+
+    console.print()
+
+
 def _render_crawl_event(ev: dict) -> None:
     """渲染爬虫实时进度事件"""
     phase = ev.get("phase", "")
@@ -188,6 +225,15 @@ async def chat_loop(cfg: dict) -> None:
                 "也可以直接跟我聊天，或输入算式让我计算。"
             ))
             console.print()
+            continue
+
+        # ── 热搜直通 ──
+        trending = re.match(
+            r"^当日(.+?)热搜[!！。.～~]*$",
+            query, re.IGNORECASE
+        )
+        if trending:
+            await _trending_fast_path(trending.group(1).strip(), reg)
             continue
 
         # ── 流式执行 Agent ──

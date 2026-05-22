@@ -238,6 +238,7 @@ async def chat_loop(cfg: dict) -> None:
 
 
 REPO_PATH_FILE = CONFIG_DIR / "repo_path"
+INSTALLED_COMMIT_FILE = CONFIG_DIR / "installed_commit"
 
 
 def find_repo_dir() -> Path | None:
@@ -253,7 +254,6 @@ def find_repo_dir() -> Path | None:
         d = start.resolve()
         for _ in range(6):
             if (d / ".git").exists():
-                # 找到后自动保存，下次直接用
                 _save_repo_path(d)
                 return d
             if d.parent == d:
@@ -272,11 +272,37 @@ def _save_repo_path(path: Path) -> None:
         pass
 
 
+def _get_remote_commit(repo: Path) -> str | None:
+    """获取 origin/master 的 commit hash"""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "origin/master"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return None
+
+
+def _save_installed_commit(repo: Path) -> None:
+    """pip 安装后保存当前版本 hash"""
+    commit = _get_remote_commit(repo)
+    if commit:
+        try:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            INSTALLED_COMMIT_FILE.write_text(commit, encoding="utf-8")
+        except Exception:
+            pass
+
+
 def check_for_updates() -> bool:
-    """检查远程是否有新提交，有则提示用户更新。返回 True 表示已是最新。"""
+    """对比已安装版本 vs 远程最新，有更新则提示。返回 True 表示可继续。"""
     repo = find_repo_dir()
     if repo is None:
-        return True  # 非 git 环境，跳过检查
+        return True
 
     console.print(f"  [dim]检查更新...[/dim]")
     try:
@@ -287,28 +313,41 @@ def check_for_updates() -> bool:
             timeout=15,
         )
     except Exception:
-        return True  # fetch 失败就静默跳过
-
-    try:
-        result = subprocess.run(
-            ["git", "rev-list", "--left-right", "--count", "HEAD...origin/master"],
-            cwd=str(repo),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        behind = int(result.stdout.strip().split()[1])
-    except Exception:
         return True
 
-    if behind == 0:
+    remote_commit = _get_remote_commit(repo)
+    if not remote_commit:
+        return True
+
+    installed_commit = ""
+    if INSTALLED_COMMIT_FILE.exists():
+        installed_commit = INSTALLED_COMMIT_FILE.read_text(encoding="utf-8").strip()
+
+    if installed_commit == remote_commit:
         console.print(f"  [dim]已是最新版本 ✓[/dim]")
         return True
 
-    # 有新提交 → 展示并询问
+    # 有更新 → 展示并询问
+    behind_desc = ""
+    try:
+        if installed_commit:
+            result = subprocess.run(
+                ["git", "rev-list", "--count", f"{installed_commit}..origin/master"],
+                cwd=str(repo),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            behind = result.stdout.strip()
+            behind_desc = f"{behind} 个提交"
+        else:
+            behind_desc = "新安装"
+    except Exception:
+        pass
+
     try:
         log = subprocess.run(
-            ["git", "log", "--oneline", "-n", str(behind), "HEAD..origin/master"],
+            ["git", "log", "--oneline", f"origin/master", "-n", "5"],
             cwd=str(repo),
             capture_output=True,
             text=True,
@@ -316,10 +355,10 @@ def check_for_updates() -> bool:
         )
         new_commits = log.stdout.strip()
     except Exception:
-        new_commits = f"{behind} 个新提交"
+        new_commits = behind_desc
 
     console.print()
-    console.print(f"  [bold yellow]⚡ 发现 {behind} 个更新:[/bold yellow]")
+    console.print(f"  [bold yellow]⚡ 发现新版本 ({behind_desc}):[/bold yellow]")
     console.print(f"  [dim]{new_commits}[/dim]")
     console.print()
     choice = input("  是否更新? [Y/n]: ").strip().lower()
@@ -343,6 +382,7 @@ def check_for_updates() -> bool:
             timeout=120,
         )
         console.print(f"  [green]✅ pip 重装完成[/green]")
+        _save_installed_commit(repo)
     except Exception as e:
         console.print(f"  [red]pip 重装失败: {e}[/red]")
         console.print(f"  [dim]请手动: pip install --force-reinstall {repo}[/dim]\n")

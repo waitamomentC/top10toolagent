@@ -33,6 +33,9 @@ echo ""
 
 "$PYTHON" -m pip install "$REPO_DIR/." --quiet
 
+# —— 保存已安装版本，供自动更新比对 ——
+git -C "$REPO_DIR" rev-parse origin/master > "$CONFIG_DIR/installed_commit" 2>/dev/null || true
+
 echo "================================================"
 echo "   安装完成!"
 echo "================================================"

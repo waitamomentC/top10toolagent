@@ -22,10 +22,16 @@ fi
 
 echo "  Python: $("$PYTHON" --version 2>&1)"
 echo ""
+# —— 保存仓库路径，供自动更新使用 ——
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+CONFIG_DIR="$HOME/.top10tool"
+mkdir -p "$CONFIG_DIR"
+echo "$REPO_DIR" > "$CONFIG_DIR/repo_path"
+
 echo "  正在安装 top10tool ..."
 echo ""
 
-"$PYTHON" -m pip install "$(dirname "$0")/." --quiet
+"$PYTHON" -m pip install "$REPO_DIR/." --quiet
 
 echo "================================================"
 echo "   安装完成!"

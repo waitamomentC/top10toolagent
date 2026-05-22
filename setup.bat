@@ -28,6 +28,12 @@ if "%PYTHON%"=="" (
 for /f "tokens=2" %%v in ('%PYTHON% --version 2^>^&1') do echo   Python: %%v
 
 echo.
+REM —— 保存仓库路径，供自动更新使用 ——
+set "REPO_DIR=%~dp0"
+set "CONFIG_DIR=%USERPROFILE%\.top10tool"
+mkdir "%CONFIG_DIR%" 2>nul
+echo %REPO_DIR%>"%CONFIG_DIR%\repo_path"
+
 echo   正在安装 top10tool ...
 echo.
 

@@ -283,18 +283,39 @@ async def chat_loop(cfg: dict) -> None:
         console.print()
 
 
+REPO_PATH_FILE = CONFIG_DIR / "repo_path"
+
+
 def find_repo_dir() -> Path | None:
     """定位 git 仓库根目录"""
-    candidates = [
-        Path.cwd(),
-        PACKAGE_DIR.parent,
-        PACKAGE_DIR,
-    ]
-    for d in candidates:
-        git_dir = d / ".git"
-        if git_dir.exists():
-            return d.resolve()
+    # ① 优先读取安装时保存的路径
+    if REPO_PATH_FILE.exists():
+        saved = Path(REPO_PATH_FILE.read_text(encoding="utf-8").strip())
+        if (saved / ".git").exists():
+            return saved
+
+    # ② 尝试当前目录 + 包目录的父级链
+    for start in [Path.cwd(), PACKAGE_DIR]:
+        d = start.resolve()
+        for _ in range(6):
+            if (d / ".git").exists():
+                # 找到后自动保存，下次直接用
+                _save_repo_path(d)
+                return d
+            if d.parent == d:
+                break
+            d = d.parent
+
     return None
+
+
+def _save_repo_path(path: Path) -> None:
+    """保存仓库路径，方便下次快速定位"""
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        REPO_PATH_FILE.write_text(str(path.resolve()), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def check_for_updates() -> bool:

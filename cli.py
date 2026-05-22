@@ -145,7 +145,7 @@ def _render_crawl_event(ev: dict) -> None:
         elif status == "blocked":
             console.print(f"    [red]⊘[/red] [{page_num}] [dim]被拦截: {url_short}[/dim]")
         elif status == "fail":
-            console.print(f"    [red]✗[/red] [{page_num}] [dim]抓取失败: {url_short}[/dim]")
+            console.print(f"    [dim]⊘ [{page_num}] 不符合条件: {url_short}[/dim]")
 
 
 async def chat_loop(cfg: dict) -> None:

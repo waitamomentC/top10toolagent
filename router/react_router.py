@@ -155,6 +155,7 @@ class ReActRouter:
                     observation = result.data if result.success else f"工具执行失败: {result.error}"
                     yield {
                         "type": "tool",
+                        "step": i,
                         "tool": parsed.action,
                         "arguments": parsed.action_input or "",
                         "result": observation[:500],
@@ -172,6 +173,7 @@ class ReActRouter:
                 observation = result.data if result.success else f"工具执行失败: {result.error}"
                 yield {
                     "type": "tool",
+                    "step": i,
                     "tool": parsed.action,
                     "arguments": parsed.action_input or "",
                     "result": observation[:500],

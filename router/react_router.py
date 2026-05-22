@@ -88,91 +88,115 @@ class ReActRouter:
         self.registry = registry
 
     async def run(self, query: str, max_steps: int = 10) -> AgentResponse:
+        steps: list[AgentStep] = []
+        tool_calls: list[ToolCallRecord] = []
+        answer = ""
+
+        async for ev in self.run_stream(query, max_steps):
+            if ev["type"] == "step":
+                steps.append(AgentStep(
+                    step=ev["step"],
+                    thought=ev["thought"],
+                    action=ev["action"],
+                    action_input=ev.get("action_input", ""),
+                    observation=ev["observation"],
+                ))
+            elif ev["type"] == "tool":
+                tool_calls.append(ToolCallRecord(
+                    tool_name=ev["tool"],
+                    arguments=ev.get("arguments", ""),
+                    result=ev.get("result", ""),
+                ))
+            elif ev["type"] == "done":
+                answer = ev["answer"]
+
+        return AgentResponse(answer=answer, steps=steps, tool_calls=tool_calls)
+
+    async def run_stream(self, query: str, max_steps: int = 10):
+        """流式 ReAct 循环 — 每步实时 yield 事件"""
         messages: list[dict] = [
             {"role": "system", "content": SYSTEM_PROMPT.format(tools=self.registry.format_prompt())},
             {"role": "user", "content": query},
         ]
 
-        steps: list[AgentStep] = []
         tool_calls: list[ToolCallRecord] = []
 
         for i in range(1, max_steps + 1):
             raw = await self.llm.chat(messages)
             parsed = self._parse(raw)
 
-            # 记录步骤
-            step = AgentStep(
-                step=i,
-                thought=parsed.thought,
-                action=parsed.action,
-                action_input=parsed.action_input,
-            )
-
             if parsed.action is None:
-                # 没有 Action → Final Answer
-                step.observation = None
-                steps.append(step)
-                return AgentResponse(
-                    answer=parsed.thought or raw,
-                    steps=steps,
-                    tool_calls=tool_calls,
-                )
+                yield {
+                    "type": "done",
+                    "answer": parsed.thought or raw,
+                    "steps": i,
+                }
+                return
 
             # 执行工具
             tool = self.registry.get(parsed.action)
             if tool is None:
                 observation = f"错误: 未知工具 '{parsed.action}'。可用: {self.registry.tool_names()}"
             elif parsed.action in ("read_excel", "write_excel"):
-                # 路由层二次拦截: LLM 生成的 Excel 操作也做格式校验
                 from tools.excel import detect_forbidden_format
-
                 fmt_err = detect_forbidden_format(parsed.action_input or "")
                 if fmt_err:
                     observation = fmt_err
                 else:
+                    yield {
+                        "type": "step",
+                        "step": i,
+                        "thought": parsed.thought,
+                        "action": parsed.action,
+                        "action_input": parsed.action_input or "",
+                        "status": "running",
+                    }
                     result = await tool.execute(parsed.action_input or "")
                     observation = result.data if result.success else f"工具执行失败: {result.error}"
-                    tool_calls.append(
-                        ToolCallRecord(
-                            tool_name=parsed.action,
-                            arguments=parsed.action_input or "",
-                            result=observation,
-                        )
-                    )
+                    yield {
+                        "type": "tool",
+                        "tool": parsed.action,
+                        "arguments": parsed.action_input or "",
+                        "result": observation[:500],
+                    }
             else:
+                yield {
+                    "type": "step",
+                    "step": i,
+                    "thought": parsed.thought,
+                    "action": parsed.action,
+                    "action_input": parsed.action_input or "",
+                    "status": "running",
+                }
                 result = await tool.execute(parsed.action_input or "")
                 observation = result.data if result.success else f"工具执行失败: {result.error}"
-                tool_calls.append(
-                    ToolCallRecord(
-                        tool_name=parsed.action,
-                        arguments=parsed.action_input or "",
-                        result=observation,
-                    )
-                )
+                yield {
+                    "type": "tool",
+                    "tool": parsed.action,
+                    "arguments": parsed.action_input or "",
+                    "result": observation[:500],
+                }
 
-            step.observation = observation
-            steps.append(step)
+            yield {
+                "type": "step",
+                "step": i,
+                "thought": parsed.thought,
+                "action": parsed.action,
+                "action_input": parsed.action_input or "",
+                "observation": observation[:300],
+                "status": "done",
+            }
 
-            # 将本轮 Thought/Action/Observation 反馈给 LLM
+            # 将本轮反馈回 LLM
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": f"Observation: {observation}"})
 
         # 达到最大步数
         final_raw = await self.llm.chat(
-            messages
-            + [
-                {
-                    "role": "user",
-                    "content": "已达到最大步数限制，请直接给出 Final Answer。",
-                }
-            ]
+            messages + [{"role": "user", "content": "已达到最大步数限制，请直接给出 Final Answer。"}]
         )
         parsed = self._parse(final_raw)
-        return AgentResponse(
-            answer=parsed.thought or final_raw,
-            steps=steps,
-            tool_calls=tool_calls,
-        )
+        yield {"type": "done", "answer": parsed.thought or final_raw, "steps": max_steps}
 
     def _parse(self, raw: str) -> ThoughtAction:
         """解析 LLM 输出中的 Thought / Action / Final Answer"""

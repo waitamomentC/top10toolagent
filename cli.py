@@ -169,23 +169,45 @@ async def chat_loop(cfg: dict) -> None:
             console.print()
             continue
 
-        # ── 执行 Agent（带进度条） ──
+        # ── 流式执行 Agent ──
         console.print()
+        answer = ""
+        tools_used: list[str] = []
         try:
-            with console.status("[dim]● 思考中...[/dim]", spinner="dots"):
-                result = await router.run(query, max_steps=12)
+            async for ev in router.run_stream(query, max_steps=12):
+                if ev["type"] == "step" and ev["status"] == "running":
+                    thought_short = ev["thought"][:60].replace("\n", " ")
+                    console.print(
+                        f"  [yellow]●[/yellow] [{ev['step']}] "
+                        f"[dim]{thought_short}[/dim] "
+                        f"→ [bold]{ev['action']}[/bold] "
+                        f"[dim]⏳[/dim]"
+                    )
+                elif ev["type"] == "tool":
+                    obs_preview = ev["result"][:120].replace("\n", " ")
+                    console.print(
+                        f"  [green]✓[/green] [{ev['step']}] "
+                        f"[dim]{ev['tool']} → {obs_preview}[/dim]"
+                    )
+                    tools_used.append(ev["tool"])
+                elif ev["type"] == "step" and ev["status"] == "done":
+                    pass  # tool result already shown
+                elif ev["type"] == "done":
+                    answer = ev["answer"]
+
         except Exception as e:
             console.print(f"  [red]出错: {e}[/red]\n")
             continue
 
         # 回复内容
-        console.print(Markdown(result.answer))
+        if answer:
+            console.print()
+            console.print(Markdown(answer))
 
-        # 工具调用
-        if result.tool_calls:
+        # 工具调用汇总
+        if tools_used:
             tags = "  ".join(
-                f"[yellow]●[/yellow] [bold]{tc.tool_name}[/bold]"
-                for tc in result.tool_calls
+                f"[yellow]●[/yellow] [bold]{t}[/bold]" for t in tools_used
             )
             console.print(f"\n  [dim]{tags}[/dim]")
 

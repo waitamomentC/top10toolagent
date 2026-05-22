@@ -92,8 +92,8 @@ def setup_wizard() -> dict:
     return cfg
 
 
-async def _trending_fast_path(platform: str, reg) -> None:
-    """「当日XXX热搜」直通 — 不走 LLM，直接调爬虫"""
+async def _trending_fast_path(platform: str, router) -> str | None:
+    """「当日XXX热搜」直通爬虫 → 爬完交 LLM 继续处理"""
     from datetime import datetime
     from tools.web_crawler import WebCrawlerTool
 
@@ -102,31 +102,69 @@ async def _trending_fast_path(platform: str, reg) -> None:
     keyword = f"{platform}热榜 {date_str}"
 
     console.print()
-    console.print(f"  [bold cyan]⚡ 热搜直通[/bold cyan] [dim]平台: {platform}[/dim]")
-    console.print(f"  [dim]关键词: {keyword}[/dim]")
+    console.print(f"  [bold cyan]⚡ 直通爬虫[/bold cyan] [dim]平台: {platform}  关键词: {keyword}[/dim]")
     console.print()
 
     crawler = WebCrawlerTool()
-    page_count = 0
+    crawl_result: str | None = None
     try:
         async for ev in crawler.stream_execute(keyword):
             if ev.get("_done"):
                 if ev.get("success"):
-                    console.print()
-                    console.print(f"  [bold green]✅ 爬取完成[/bold green]")
-                    console.print(f"  [dim]结果摘要已生成，下一步可写入 Excel[/dim]")
-                    # 截取前 500 字符作为预览
-                    preview = ev.get("data", "")[:800]
-                    console.print(f"  [dim]{preview}[/dim]")
+                    crawl_result = ev.get("data", "")
                 else:
                     console.print(f"  [red]爬取失败: {ev.get('error', '未知错误')}[/red]")
             else:
                 _render_crawl_event(ev)
-                page_count = ev.get("page_num", page_count)
     except Exception as e:
         console.print(f"  [red]爬虫出错: {e}[/red]")
+        return None
+
+    if not crawl_result:
+        return None
+
+    console.print(f"  [bold green]✅ 爬取完成[/bold green] — 交给 LLM 处理数据")
+    console.print()
+
+    # 构造注入消息，让 LLM 收到"爬虫已执行完毕"的上下文
+    inject_query = f"""web_crawler 工具已执行完毕，关键词「{keyword}」，以下是爬取结果：
+
+{crawl_result}
+
+请根据以上结果执行后续步骤：
+1. 从结果中提取每条热搜的：日期、关键字、链接、内容简述
+2. 使用 list_excel_files 查看项目根目录已有 Excel 文件
+3. 确认或创建文件后，使用 write_excel 写入（格式参照系统提示）
+
+请直接开始第一步。"""
+
+    # 流式执行 ReAct，LLM 接过后处理
+    try:
+        async for ev in router.run_stream(inject_query, max_steps=12):
+            if ev["type"] == "step" and ev["status"] == "running":
+                thought_short = ev["thought"][:80].replace("\n", " ")
+                console.print(
+                    f"  [yellow]●[/yellow] [{ev['step']}] "
+                    f"[dim]{thought_short}[/dim] "
+                    f"→ [bold]{ev['action']}[/bold]"
+                )
+            elif ev["type"] == "tool":
+                obs_preview = ev["result"][:150].replace("\n", " ")
+                console.print(
+                    f"  [green]✓[/green] [{ev['step']}] "
+                    f"[dim]{ev['tool']} → {obs_preview}[/dim]"
+                )
+            elif ev["type"] == "step" and ev["status"] == "done":
+                pass
+            elif ev["type"] == "done":
+                if ev["answer"]:
+                    console.print()
+                    console.print(Markdown(ev["answer"]))
+    except Exception as e:
+        console.print(f"  [red]LLM 处理出错: {e}[/red]")
 
     console.print()
+    return crawl_result
 
 
 def _render_crawl_event(ev: dict) -> None:
@@ -233,7 +271,7 @@ async def chat_loop(cfg: dict) -> None:
             query, re.IGNORECASE
         )
         if trending:
-            await _trending_fast_path(trending.group(1).strip(), reg)
+            await _trending_fast_path(trending.group(1).strip(), router)
             continue
 
         # ── 流式执行 Agent ──
